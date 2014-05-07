@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Showing pixel and tile coordinates</title>
+    <meta name="viewport" content="initial-scale=1.0, user-scalable=no">
+    <meta charset="utf-8">
+    <style>
+      html, body, #map-canvas {
+        height: 100%;
+        margin: 0px;
+        padding: 0px
+      }
+    </style>
+    <script src="http://code.jquery.com/jquery-2.0.0.js"></script>
+    <script src="https://maps.googleapis.com/maps/api/js?v=3.exp&sensor=false"></script>
+    <script type="text/javascript" src="https://www.google.com/jsapi"></script>
+    <script>
+var map;
+var TILE_SIZE = 256;
+var goteborg = new google.maps.LatLng(57.696975,11.978879);
+
+function bound(value, opt_min, opt_max) {
+  if (opt_min != null) value = Math.max(value, opt_min);
+  if (opt_max != null) value = Math.min(value, opt_max);
+  return value;
+}
+
+function degreesToRadians(deg) {
+  return deg * (Math.PI / 180);
+}
+
+function radiansToDegrees(rad) {
+  return rad / (Math.PI / 180);
+}
+
+/** @constructor */
+function MercatorProjection() {
+  this.pixelOrigin_ = new google.maps.Point(TILE_SIZE / 2,
+      TILE_SIZE / 2);
+  this.pixelsPerLonDegree_ = TILE_SIZE / 360;
+  this.pixelsPerLonRadian_ = TILE_SIZE / (2 * Math.PI);
+}
+
+MercatorProjection.prototype.fromLatLngToPoint = function(latLng,
+    opt_point) {
+  var me = this;
+  var point = opt_point || new google.maps.Point(0, 0);
+  var origin = me.pixelOrigin_;
+
+  point.x = origin.x + latLng.lng() * me.pixelsPerLonDegree_;
+
+  // Truncating to 0.9999 effectively limits latitude to 89.189. This is
+  // about a third of a tile past the edge of the world tile.
+  var siny = bound(Math.sin(degreesToRadians(latLng.lat())), -0.9999,
+      0.9999);
+  point.y = origin.y + 0.5 * Math.log((1 + siny) / (1 - siny)) *
+      -me.pixelsPerLonRadian_;
+  return point;
+};
+
+MercatorProjection.prototype.fromPointToLatLng = function(point) {
+  var me = this;
+  var origin = me.pixelOrigin_;
+  var lng = (point.x - origin.x) / me.pixelsPerLonDegree_;
+  var latRadians = (point.y - origin.y) / -me.pixelsPerLonRadian_;
+  var lat = radiansToDegrees(2 * Math.atan(Math.exp(latRadians)) -
+      Math.PI / 2);
+  return new google.maps.LatLng(lat, lng);
+};
+
+sensors = [];
+var k = 0;
+
+window.getId = function(data){
+	//console.log(data);
+	sensors = [];
+	k = 0;
+	data.rows.forEach(function(i,j){
+		sensors.push(i);
+		var curSens = i.value.sensor_id;		
+		var url = 'https://cdb.forskningsdata.se/sp-dagen-data/_design/read/_view/read?descending=true&callback=getValues&limit=1&key="'+curSens+'"';
+		$.ajax({
+		  url: url,
+		  dataType: "jsonp"
+		});
+	});
+}
+
+google.load("visualization", "1", {packages:["corechart"]});
+/*google.setOnLoadCallback(function(){
+
+});*/
+
+window.getValues = function(data){
+	data.rows.forEach(function(i,j){
+		var temp = i.value.temp;
+		var hum = i.value.hum;
+		var lat = sensors[k].value.lat;
+		var lon = sensors[k].value.lon;
+		var sensor_id = sensors[k].value.sensor_id;
+
+		var coordInfoWindow = new google.maps.InfoWindow({maxWidth: 200});
+	    coordInfoWindow.setContent('<div style="line-height:1.35; overflow:hidden; white-space:nowrap;" id="'+sensor_id+'"><span id="temp">'+temp+' °C</span°><br><span id="hum">'+hum+' RH%</span></div>');
+	    //<div id="chart_div_'+sensor_id+'" style="width: 200px; height: 200px;"></div>
+	    coordInfoWindow.setPosition(new google.maps.LatLng(lat,lon));
+	    coordInfoWindow.open(map);
+		
+	    k++;
+	});
+	//console.log(data);
+}
+
+window.update = function(data){
+	data.rows.forEach(function(i,j){
+		//i.value.hum;
+		$('#'+i.value.sensor_id).html('<span id="temp">'+i.value.temp.toFixed(1)+' °C</span°><br><span id="hum">'+i.value.hum.toFixed(0)+' RH%</span>');
+  	});
+	// console.log("Got change!");
+	// console.log(par1);
+	// console.log(changes);
+	/*data.rows.forEach(function(i,j){
+		var curSens = i.key;		
+		$('#'+)
+	});*/
+}
+
+
+
+/*bind_db_changes("test", function(changes){
+    $('ul').append("<li>"+ changes.last_seq +"</li>");
+});*/
+
+
+function initialize() {
+
+	//https://cdb.forskningsdata.se/sp-dagen-sensors/_design/read_id/_view/read_id
+	var url = 'https://cdb.forskningsdata.se/sp-dagen-sensors/_design/read_id/_view/read_id?callback=getId';
+	var request = $.ajax({
+	  url: url,
+	  dataType: "jsonp"
+	});
+
+
+
+	
+
+  var mapOptions = {
+    zoom: 16,
+    center: goteborg
+  };
+
+  map = new google.maps.Map(document.getElementById('map-canvas'), mapOptions);
+
+
+
+  // google.maps.event.addListener(map, 'zoom_changed', function() {
+    
+  // });
+  setInterval(function(){
+  	sensors.forEach(function(i,j){
+  		var url = 'https://cdb.forskningsdata.se/sp-dagen-data/_design/read/_view/read?descending=true&callback=update&limit=1&key="'+i.value.sensor_id+'"';
+  		$.ajax({
+		  url: url,
+		  dataType: "jsonp"
+		});
+		// var url = 'https://cdb.forskningsdata.se/sp-dagen-data/_design/read/_view/read?callback=getValues&limit=1&key="'+curSens+'"';
+  	});
+  },1000);
+
+}
+
+google.maps.event.addDomListener(window, 'load', initialize);
+
+    </script>
+  </head>
+  <body>
+    <div id="map-canvas"></div>
+  </body>
+</html>
